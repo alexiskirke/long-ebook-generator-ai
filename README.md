@@ -1,6 +1,5 @@
-# long_ebook_generator_ai
+# long-ebook-generator-ai
 
-**Version**: 1.0.3 
 **Author**: Alexis Kirke (narrative.layer)
 
 ## Overview
@@ -17,7 +16,6 @@ The package integrates with OpenAI's API to generate book content based on custo
 - **AI-Generated Book Covers**: Automatically generate a cover for your book using image generation AI models.
 - **LaTeX Equation Support**: Convert LaTeX equations to MathML for display in the eBook.
 - **Kindle Compatibility**: Optionally force compatibility with Amazon Kindle devices.
-- **Extendable with Custom Language Models**: Easily integrate other language models by implementing a custom client.
 
 ## Installation
 
@@ -34,15 +32,11 @@ Here's an example of how to generate an outline and an EPUB book using `long-ebo
 ### 1. Import and Initialize the Client
 
 ```python
-from book_writer import OpenAIClient, BookWriter
-
-# Initialize the OpenAI client
-openai_api_key = 'your-openai-api-key'
-client = OpenAIClient(openai_api_key=openai_api_key)
+from book_writer import BookWriter
 
 # Initialize the BookWriter
 title = "The AI Revolution"
-writer = BookWriter(title=title, client=client)
+writer = BookWriter(title=title, client=client, openai_api_key=openai_api_key))
 ```
 
 ### 2. Generate an Outline
@@ -66,19 +60,6 @@ writer.generate_ebook(
     force_kindle_compatibility=True,
     image_prompt="A futuristic book cover showing an AI revolution"
 )
-```
-
-## Customization
-
-You can easily extend the package by implementing your own language model client. Just create a new class inheriting from `LLMClient` and implement the `generate_text` method.
-
-```python
-from book_writer import LLMClient
-
-class CustomClient(LLMClient):
-    def generate_text(self, prompt: str) -> str:
-        # Custom implementation
-        pass
 ```
 
 ## Dependencies
