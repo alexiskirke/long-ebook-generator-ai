@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="long_ebook_generator_ai",
-    version="1.0.2",
+    name="long-ebook-generator-ai",
+    version="1.0.3",
     author="Alexis Kirke",
     author_email="alexiskirke2@gmail.com",
     description="An A.I. tool for generating long Kindle ebooks based on a prompt",
