@@ -1,0 +1,8 @@
+global-exclude .env
+global-exclude test_book_writer.py
+global-exclude archive/
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so
+global-exclude venv/
+global-exclude outline_steps/

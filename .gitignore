@@ -1,0 +1,36 @@
+*.epub
+*.html
+*.json
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual Environment
+venv/
+
+# IDEs
+.vscode/
+.idea/
+*.egg-info
+dist/
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+diffs.txt
+book_writer_fiction.py
+archive/
+.env
+test_book_writer.py
+outline_steps/
