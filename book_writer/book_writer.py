@@ -12,11 +12,16 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
+from tqdm import tqdm
+from copy import deepcopy
 
 #MAX_TOKENS_GPT4ALL = 900
 #MAX_CONTEXT_GPT4ALL = 64000
 #MODEL_LOCATIONS = "/Users/alexiskirke/Library/Application Support/nomic.ai/GPT4All/"
 #models = {"nous":"nous-hermes-llama2-13b.Q4_0.gguf", "meta-128k":"Meta-Llama-3.1-8B-Instruct-128k-Q4_0.gguf","meta-instruct":"Meta-Llama-3-8B-Instruct.Q4_0.gguf"}
+
+LLM_COSTS = {'gpt-4o': {'input':2.5e-6, 'output':10e-6},
+         'gpt-4o-mini': {'input':1.5e-7, 'output': 6e-7}}
 
 class LLMClient(ABC):
     """
@@ -112,6 +117,7 @@ class OutlineHTMLGenerator:
         """
         self.json_file_path = json_file_path
         self.outline_data = self._load_json()
+        self.summarized_paras_outline = None
         self.phrases_to_avoid = ['delves',
         'showcasing',
         'underscores',
@@ -610,7 +616,7 @@ class BookOutlineGenerator:
         else:
             self.llm_client = OpenAIClient(openai_api_key=openai_api_key)
 
-    def send_prompt(self, topic: str, num_chapters: int = 3, sections_per_chapter: int = 3, subsections_per_section: int = 3, paras_per_subsection: int = 1, paragraph_style: str = '') -> Dict:
+    def generate_styled_outline(self, topic: str, num_chapters: int = 3, sections_per_chapter: int = 3, subsections_per_section: int = 3, paras_per_subsection: int = 1, paragraph_style: str = '') -> Dict:
         """
         Generate a complete book outline based on the given parameters.
 
@@ -632,8 +638,13 @@ class BookOutlineGenerator:
         self._generate_level2(subsections_per_section)
         self._generate_level3(paras_per_subsection, paragraph_style)
         print("Outline generation complete.")
-        print(f"Cumulative tokens sent: {self.cumulative_tokens_sent}")
-        print(f"Cumulative tokens received: {self.cumulative_tokens_received}")
+        #print(f"Cumulative tokens sent: {self.cumulative_tokens_sent}")
+        #print(f"Cumulative tokens received: {self.cumulative_tokens_received}")
+        #per_token_in = LLM_COSTS[self.llm_client.model]['input']
+        #per_token_out = LLM_COSTS[self.llm_client.model]['output']
+        #cum_cost = self.cumulative_tokens_received * per_token_out + #self.cumulative_tokens_sent * per_token_in
+        #print(f"Cumulative cost: ${round(cum_cost,3)}")
+        
         return self.full_outline
 
     def _generate_chapters(self, topic: str, num_chapters: int):
@@ -664,7 +675,7 @@ class BookOutlineGenerator:
             sections_per_chapter (int): Number of sections to generate per chapter.
         """
         print(f"Generating level 1 sections")
-        for chapter_title in self.full_outline[list(self.full_outline.keys())[0]]:
+        for chapter_title in tqdm(self.full_outline[list(self.full_outline.keys())[0]], desc="Generating chapter subtopics"):
             context = self._get_outline_context()
             prompt = f"Given the following outline context:\n\n{context}\n\nGenerate {sections_per_chapter} section titles for the chapter titled: {chapter_title}, in such as a way as to avoid repeating material in earlier or later chapters or sections. Do not include the word 'Section' or a section number in the section titles."
             response = self._send_request(prompt, is_title=True)
@@ -685,7 +696,7 @@ class BookOutlineGenerator:
             subsections_per_section (int): Number of subsections to generate per section.
         """
         print(f"Generating level 2 sections")
-        for chapter_title, chapter_content in self.full_outline[list(self.full_outline.keys())[0]].items():
+        for chapter_title, chapter_content in tqdm(self.full_outline[list(self.full_outline.keys())[0]].items(), desc="Generating subsection topics"):
             for section_title in chapter_content:
                 context = self._get_outline_context()
                 prompt = f"Given the following outline context:\n\n{context}\n\nGenerate {subsections_per_section} subsection titles for the section titled: {section_title}, in such as a way as to avoid repeating material in earlier pr later chapters or sections. Do not include the word 'subsection' or a subsection number in the subsection titles."
@@ -701,7 +712,7 @@ class BookOutlineGenerator:
 
     def _generate_level3(self, paras_per_subsection: int, paragraph_style: str):
         """
-        Generate level 3 paragraphs for each subsection.
+        Generate level N paragraphs for each subsection.
 
         Args:
             paras_per_subsection (int): Number of paragraphs to generate per subsection.
@@ -709,18 +720,27 @@ class BookOutlineGenerator:
         """
         print(f"Generating level 3 sections with paragraphs")
         self._count_total_sections(self.full_outline)  # Count total sections before starting
+        # the below is used to contain summarized paragraphs
+        self.summarized_paras_outline = deepcopy(self.full_outline)
+        
+        total_subsections = sum(len(section_content) for chapter_content in self.full_outline[list(self.full_outline.keys())[0]].values() for section_content in chapter_content.values())
+        progress_bar = tqdm(total=total_subsections, desc="Generating full text of paragraphs")
         for chapter_title, chapter_content in self.full_outline[list(self.full_outline.keys())[0]].items():
             for section_title, section_content in chapter_content.items():
                 for subsection_title in section_content:
-                    context = self._get_outline_context()
-                    prompt = f"You are a professional author.  Do not use any of the phrases or words in this list: \n{self.phrases_to_avoid}.\n Given the following outline context:\n\n{context}\n\nWrite {paras_per_subsection} paragraphs about this topic: '{subsection_title}' (which you are an expert on), in such as a way as to avoid repeating concepts covered in earlier or future chapters or sections or paragraphs. Do not use any of the phrases or words in this list: {self.phrases_to_avoid}. \n" + paragraph_style
+                    progress_bar.update(1)
+                    context = self._get_outline_context_summarised_paras()
+                    prompt = f"You are a professional author.  Do not use any of the phrases or words in this list: \n{self.phrases_to_avoid}.\n Given the following outline context for a book:\n\n{context}\n\nWrite {paras_per_subsection} paragraphs the section of the book about this topic: '{subsection_title}' (which you are an expert on), in such as a way as to avoid repeating concepts covered in earlier or future chapters or sections or paragraphs. Do not use any of the phrases or words in this list: {self.phrases_to_avoid}. \n" + paragraph_style
                     response = self._send_request(prompt, is_title=False)
                     paragraphs = response.strip().split('\n\n')
                     self.full_outline[list(self.full_outline.keys())[0]][chapter_title][section_title][subsection_title] = {'paragraphs': paragraphs[:paras_per_subsection]}
-                    
+                    # to avoid excessive cost, store a parallel
+                    # set of summarised paras.
+                    summarised_paras = self._send_request("Summarize the following in at most 3 short bullet points:\n " + '\n'.join(paragraphs[:paras_per_subsection]), is_title=False)
+                    self.summarized_paras_outline[list(self.full_outline.keys())[0]][chapter_title][section_title][subsection_title] = {'paragraphs summarised': summarised_paras}
                     # Update progress
                     self.completed_sections += 1
-                    self._print_progress()
+                    #self._print_progress()
         
         # Save level 3 to file
         with open(os.path.join(self.working_dir, 'outline_depth_3.json'), 'w') as f:
@@ -750,8 +770,11 @@ class BookOutlineGenerator:
         
         tokens_received = len(self.encoder.encode(response))
         self.cumulative_tokens_received += tokens_received
+        per_token_in = LLM_COSTS[self.llm_client.model]['input']
+        per_token_out = LLM_COSTS[self.llm_client.model]['output']
+        cum_cost = self.cumulative_tokens_received * per_token_out + self.cumulative_tokens_sent * per_token_in
+        print(f"Total cost: ${round(cum_cost,3)}, Total words sent: {int(self.cumulative_tokens_sent*(1/0.8))}, Total words received: {int(self.cumulative_tokens_received*(1/0.8))}")
         
-        print(f"Cumulative tokens sent: {self.cumulative_tokens_sent}, Cumulative tokens received: {self.cumulative_tokens_received}")
         return response
 
     def _get_outline_context(self) -> str:
@@ -762,6 +785,16 @@ class BookOutlineGenerator:
             str: The current outline context as a JSON string.
         """
         return json.dumps(self.full_outline, indent=2)
+    
+    def _get_outline_context_summarised_paras(self) -> str:
+        """
+        Get the current outline context as a JSON string
+        but with summarised paras.
+
+        Returns:
+            str: The current outline context as a JSON string.
+        """
+        return json.dumps(self.summarized_paras_outline, indent=2)
 
     def _print_progress(self):
         """
@@ -796,7 +829,7 @@ class BookWriter:
         
 
     def generate_outline(self, num_chapters: int = 3, sections_per_chapter: int = 2, subsections_per_section: int = 3, paras_per_subsection: int = 3):
-        self.outline = self.generator.send_prompt(
+        self.outline = self.generator.generate_styled_outline(
             self.title, 
             num_chapters=num_chapters, 
             sections_per_chapter=sections_per_chapter, 
