@@ -14,6 +14,8 @@ import io
 import base64
 from tqdm import tqdm
 from copy import deepcopy
+import textwrap
+import platform
 
 #MAX_TOKENS_GPT4ALL = 900
 #MAX_CONTEXT_GPT4ALL = 64000
@@ -458,7 +460,7 @@ class OutlineEbookGenerator:
     
     def _generate_cover_image(self) -> bytes:
         """
-        Generate a cover image for the ebook.
+        Generate a cover image for the ebook with title and author.
 
         Returns:
             bytes: The generated cover image data.
@@ -466,6 +468,7 @@ class OutlineEbookGenerator:
         Raises:
             RuntimeError: If the OpenAI API call fails.
         """
+        print("Generating ebook cover")
         if self.override_image_prompt:
             prompt = self.override_image_prompt
         else:
@@ -496,13 +499,13 @@ class OutlineEbookGenerator:
         with open(image_path, "rb") as f:
             image_data = f.read()
 
-            # Open the image using PIL
-            img = Image.open(io.BytesIO(image_data))
+        # Open the image using PIL
+        img = Image.open(io.BytesIO(image_data))
         
         # Create a drawing object
         draw = ImageDraw.Draw(img)
 
-        # chop the image so it is ratio 1.5:1
+        # Crop the image to the correct aspect ratio (1.5:1)
         width, height = img.size
         target_ratio = 1/1.5
         current_ratio = width / height
@@ -520,10 +523,116 @@ class OutlineEbookGenerator:
 
         # Convert the image to RGB mode
         img = img.convert('RGB')
-        
+
+        # Add title and author to the image
+        self._add_text_to_image(img, self.book_title.upper(), self.book_author)
+
         img_byte_arr = io.BytesIO()
         img.save(img_byte_arr, format='JPEG')
         return img_byte_arr.getvalue()
+
+    def _add_text_to_image(self, img: Image.Image, title: str, author: str):
+        """
+        Add title and author text to the image.
+
+        Args:
+            img (Image.Image): The image to add text to.
+            title (str): The book title.
+            author (str): The book author.
+        """
+        width, height = img.size
+        
+        # Define colors
+        BLUE = (0, 0, 255, 128)  # 50% opacity blue
+        YELLOW = (255, 255, 0, 255)  # Solid yellow
+
+        # Set up font
+        font_path = self._get_font_path()
+        
+        # Add title (keep this as is)
+        title_font, title_lines = self._find_optimal_font_size_and_wrap(title, width * 0.9, height * 0.2, font_path)
+        self._draw_text_with_background(img, title_lines, title_font, 0.1, BLUE, YELLOW, is_bottom=False)
+
+        # Add author (move to bottom)
+        author_font, author_lines = self._find_optimal_font_size_and_wrap(author, width * 0.9, height * 0.1, font_path)
+        self._draw_text_with_background(img, author_lines, author_font, 1.0, BLUE, YELLOW, is_bottom=True)
+
+    def _get_font_path(self):
+        if platform.system() == "Darwin":
+            return "/Library/Fonts/Arial.ttf"
+        elif platform.system() == "Windows":
+            return "C:/Windows/Fonts/Arial.ttf"
+        elif platform.system() == "Linux":
+            return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        else:
+            msg = "Error: Unsupported OS (only supports Darwin, Windows, Linux). Or this package is detecting your OS incorrectly."
+            raise OSError(msg)
+
+    def _find_optimal_font_size_and_wrap(self, text, max_width, max_height, font_path):
+        font_size = 1
+        lines = []
+        while True:
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+            except OSError:
+                msg = f"Error: find_optimal_font_size_and_wrap - Invalid font path: {font_path}"
+                msg += "This is probably because the OS font path has been incorrectly detected by this package."
+                raise OSError(msg)
+            
+            avg_char_width = font.getbbox('X')[2]
+            max_chars_per_line = max(1, int(max_width / avg_char_width))
+            wrapped_lines = textwrap.wrap(text, width=max_chars_per_line)
+            
+            line_height = font.getbbox('X')[3]
+            total_height = line_height * len(wrapped_lines)
+            
+            if total_height > max_height * 0.8:
+                font_size -= 1
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            
+            font_size += 1
+            lines = wrapped_lines
+        
+        return font, lines
+
+    def _draw_text_with_background(self, img, lines, font, y_position_ratio, bg_color, text_color, is_bottom=False):
+        draw = ImageDraw.Draw(img, "RGBA")
+        width, height = img.size
+        line_height = font.getbbox('X')[3]
+        total_text_height = line_height * len(lines)
+        
+        # Calculate the banner height
+        banner_height = int(height * 0.2)  # Adjust this ratio as needed
+
+        if is_bottom:
+            # For author: place the banner at the bottom
+            banner_bottom = height
+            banner_top = height - banner_height
+        else:
+            # For title: center the banner around y_position_ratio
+            banner_top = int(height * y_position_ratio - banner_height / 2)
+            banner_bottom = banner_top + banner_height
+
+        # Ensure the banner stays within the image bounds
+        banner_top = max(0, min(banner_top, height - banner_height))
+        banner_bottom = min(height, banner_top + banner_height)
+
+        # Draw the background rectangle
+        draw.rectangle([(0, banner_top), (width, banner_bottom)], fill=bg_color)
+
+        # Calculate the vertical centering within the banner
+        text_top = banner_top + (banner_height - total_text_height) / 2
+        y_position = text_top
+
+        # Draw each line of text
+        for line in lines:
+            bbox = font.getbbox(line)
+            text_width = bbox[2] - bbox[0]
+            x_position = (width - text_width) / 2
+            
+            draw.text((x_position, y_position), line, fill=text_color, font=font)
+            y_position += line_height
 
     def save_ebook(self, output_file_path: str):
         """
