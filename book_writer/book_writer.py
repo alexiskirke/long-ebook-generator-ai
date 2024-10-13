@@ -747,12 +747,6 @@ class BookOutlineGenerator:
         self._generate_level2(subsections_per_section)
         self._generate_level3(paras_per_subsection, paragraph_style)
         print("Outline generation complete.")
-        #print(f"Cumulative tokens sent: {self.cumulative_tokens_sent}")
-        #print(f"Cumulative tokens received: {self.cumulative_tokens_received}")
-        #per_token_in = LLM_COSTS[self.llm_client.model]['input']
-        #per_token_out = LLM_COSTS[self.llm_client.model]['output']
-        #cum_cost = self.cumulative_tokens_received * per_token_out + #self.cumulative_tokens_sent * per_token_in
-        #print(f"Cumulative cost: ${round(cum_cost,3)}")
         
         return self.full_outline
 
